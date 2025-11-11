@@ -28,7 +28,9 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-// CHANGED: client -> frontend, added ../
+
+// Serve static files from frontend/dist (CSS, JS, images, etc.)
+// This serves actual files (like assets/index.js, assets/index.css) but passes through for routes
 app.use(express.static(path.join(__dirname, "../frontend/dist")));
 
 // Socket.IO connection handling
@@ -81,9 +83,28 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Serve SPA for all non-API, non-static routes (supports direct links like /login)
-app.get(/^\/(?!api|uploads).*/, (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/dist", "index.html"));
+// Serve SPA for all non-API, non-static routes (supports direct links and page refreshes)
+// This must be the last route to catch all routes that don't match API or static files
+app.get("*", (req, res, next) => {
+  // Skip if it's an API route or uploads route
+  if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
+    return next();
+  }
+  
+  // Skip if it's a static file request (has file extension like .js, .css, .png, etc.)
+  const hasFileExtension = /\.[^/]+$/.test(req.path);
+  if (hasFileExtension) {
+    return next();
+  }
+  
+  // Serve index.html for all SPA routes (this allows React Router to handle routing)
+  const indexPath = path.join(__dirname, "../frontend/dist", "index.html");
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error("Error sending index.html:", err);
+      res.status(500).send("Error loading application");
+    }
+  });
 });
 
 const PORT = Number(process.env.PORT) || 5000;
