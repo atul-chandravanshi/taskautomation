@@ -5,6 +5,7 @@ const http = require("http");
 const socketIo = require("socket.io");
 const dotenv = require("dotenv");
 const path = require("path");
+const fs = require("fs");
 
 dotenv.config();
 
@@ -31,7 +32,20 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Serve static files from frontend/dist (CSS, JS, images, etc.)
 // This serves actual files (like assets/index.js, assets/index.css) but passes through for routes
-app.use(express.static(path.join(__dirname, "../frontend/dist")));
+const staticOptions = {
+  dotfiles: 'ignore',
+  etag: true,
+  extensions: ['html', 'htm'],
+  fallthrough: true, // Important: allows request to continue to next middleware if file not found
+  index: false, // Don't serve index.html automatically
+  lastModified: true,
+  maxAge: '1d',
+  redirect: false,
+  setHeaders: function (res, path, stat) {
+    res.set('x-timestamp', Date.now().toString());
+  }
+};
+app.use(express.static(path.join(__dirname, "../frontend/dist"), staticOptions));
 
 // Socket.IO connection handling
 io.on("connection", (socket) => {
@@ -92,6 +106,7 @@ app.get("*", (req, res, next) => {
   }
   
   // Skip if it's a static file request (has file extension like .js, .css, .png, etc.)
+  // This allows static files to be served by the static middleware above
   const hasFileExtension = /\.[^/]+$/.test(req.path);
   if (hasFileExtension) {
     return next();
@@ -99,10 +114,19 @@ app.get("*", (req, res, next) => {
   
   // Serve index.html for all SPA routes (this allows React Router to handle routing)
   const indexPath = path.join(__dirname, "../frontend/dist", "index.html");
+  
+  // Check if file exists before sending
+  if (!fs.existsSync(indexPath)) {
+    console.error(`index.html not found at: ${indexPath}`);
+    return res.status(500).send("Application not built. Please run 'npm run build' in the frontend directory.");
+  }
+  
   res.sendFile(indexPath, (err) => {
     if (err) {
       console.error("Error sending index.html:", err);
-      res.status(500).send("Error loading application");
+      if (!res.headersSent) {
+        res.status(500).send("Error loading application");
+      }
     }
   });
 });
