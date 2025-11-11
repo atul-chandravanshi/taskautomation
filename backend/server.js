@@ -35,15 +35,28 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // Serve static assets from frontend/dist
 const distPath = path.join(__dirname, "../frontend/dist");
 
-// Serve assets folder (JS, CSS files)
-app.use("/assets", express.static(path.join(distPath, "assets")));
+// Serve assets folder (JS, CSS files) - MUST have fallthrough: true
+app.use("/assets", express.static(path.join(distPath, "assets"), {
+  fallthrough: true
+}));
 
 // Serve root-level static files (images like logo.png, task-logo.webp)
-app.get("/logo.png", (req, res) => {
-  res.sendFile(path.join(distPath, "logo.png"));
+app.get("/logo.png", (req, res, next) => {
+  const logoPath = path.join(distPath, "logo.png");
+  if (fs.existsSync(logoPath)) {
+    res.sendFile(logoPath);
+  } else {
+    next();
+  }
 });
-app.get("/task-logo.webp", (req, res) => {
-  res.sendFile(path.join(distPath, "task-logo.webp"));
+
+app.get("/task-logo.webp", (req, res, next) => {
+  const logoPath = path.join(distPath, "task-logo.webp");
+  if (fs.existsSync(logoPath)) {
+    res.sendFile(logoPath);
+  } else {
+    next();
+  }
 });
 
 // Socket.IO connection handling
@@ -97,28 +110,10 @@ app.use((err, req, res, next) => {
 });
 
 // Serve SPA - This MUST be the absolute last route
-// This catches all routes that don't match API, uploads, or static files
+// This catches ALL routes that don't match API, uploads, or static files
 // and serves index.html so React Router can handle client-side routing
 app.get("*", (req, res) => {
-  // Don't serve index.html for API routes (should have been handled already)
-  if (req.path.startsWith("/api")) {
-    return res.status(404).json({ success: false, message: "API route not found" });
-  }
-  
-  // Don't serve index.html for uploads (should have been handled already)
-  if (req.path.startsWith("/uploads")) {
-    return res.status(404).json({ success: false, message: "File not found" });
-  }
-  
-  // Don't serve index.html for assets (should have been handled already)
-  if (req.path.startsWith("/assets")) {
-    return res.status(404).send("Asset not found");
-  }
-  
-  // Don't serve index.html for static files with extensions (except .html)
-  if (/\.[^/]+$/.test(req.path) && !req.path.endsWith(".html")) {
-    return res.status(404).send("File not found");
-  }
+  console.log(`[SPA Route] Serving index.html for: ${req.path}`);
   
   // Try multiple possible paths for index.html (for different deployment environments)
   const possiblePaths = [
@@ -132,24 +127,28 @@ app.get("*", (req, res) => {
   for (const possiblePath of possiblePaths) {
     if (fs.existsSync(possiblePath)) {
       indexPath = possiblePath;
+      console.log(`[SPA Route] Found index.html at: ${indexPath}`);
       break;
     }
   }
   
   if (!indexPath) {
-    console.error(`index.html not found. Tried paths:`, possiblePaths);
-    console.error(`Current __dirname: ${__dirname}`);
-    console.error(`Current process.cwd(): ${process.cwd()}`);
+    console.error(`[SPA Route] index.html not found. Tried paths:`, possiblePaths);
+    console.error(`[SPA Route] Current __dirname: ${__dirname}`);
+    console.error(`[SPA Route] Current process.cwd(): ${process.cwd()}`);
     return res.status(500).send("Application not built. Please run 'npm run build' in the frontend directory.");
   }
   
-  // Serve index.html for all SPA routes (like /logs, /templates, /participants, etc.)
+  // Serve index.html for ALL SPA routes (like /logs, /templates, /participants, etc.)
+  // This will be caught by React Router on the client side
   res.sendFile(indexPath, (err) => {
     if (err) {
-      console.error("Error sending index.html:", err);
+      console.error("[SPA Route] Error sending index.html:", err);
       if (!res.headersSent) {
         res.status(500).send("Error loading application");
       }
+    } else {
+      console.log(`[SPA Route] Successfully served index.html for: ${req.path}`);
     }
   });
 });
