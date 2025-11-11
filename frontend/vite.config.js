@@ -7,11 +7,11 @@ export default defineConfig({
     port: 3000,
     proxy: {
       "/api": {
-        target: "https://taskautomation-hrz2.onrender.com",
+        target: "https://taskautomation-bwu4.onrender.com",
         changeOrigin: true,
       },
       "/socket.io": {
-        target: "https://taskautomation-hrz2.onrender.com",
+        target: "https://taskautomation-bwu4.onrender.com",
         ws: true,
         changeOrigin: true,
       },
