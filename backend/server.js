@@ -28,24 +28,23 @@ app.use(
 );
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve uploads directory
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// Serve static files from frontend/dist (CSS, JS, images, etc.)
-// This serves actual files (like assets/index.js, assets/index.css) but passes through for routes
-const staticOptions = {
-  dotfiles: 'ignore',
-  etag: true,
-  extensions: ['html', 'htm'],
-  fallthrough: true, // Important: allows request to continue to next middleware if file not found
-  index: false, // Don't serve index.html automatically
-  lastModified: true,
-  maxAge: '1d',
-  redirect: false,
-  setHeaders: function (res, path, stat) {
-    res.set('x-timestamp', Date.now().toString());
-  }
-};
-app.use(express.static(path.join(__dirname, "../frontend/dist"), staticOptions));
+// Serve static assets from frontend/dist
+const distPath = path.join(__dirname, "../frontend/dist");
+
+// Serve assets folder (JS, CSS files)
+app.use("/assets", express.static(path.join(distPath, "assets")));
+
+// Serve root-level static files (images like logo.png, task-logo.webp)
+app.get("/logo.png", (req, res) => {
+  res.sendFile(path.join(distPath, "logo.png"));
+});
+app.get("/task-logo.webp", (req, res) => {
+  res.sendFile(path.join(distPath, "task-logo.webp"));
+});
 
 // Socket.IO connection handling
 io.on("connection", (socket) => {
@@ -97,30 +96,54 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Serve SPA for all non-API, non-static routes (supports direct links and page refreshes)
-// This must be the last route to catch all routes that don't match API or static files
-app.get("*", (req, res, next) => {
-  // Skip if it's an API route or uploads route
-  if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
-    return next();
+// Serve SPA - This MUST be the absolute last route
+// This catches all routes that don't match API, uploads, or static files
+// and serves index.html so React Router can handle client-side routing
+app.get("*", (req, res) => {
+  // Don't serve index.html for API routes (should have been handled already)
+  if (req.path.startsWith("/api")) {
+    return res.status(404).json({ success: false, message: "API route not found" });
   }
   
-  // Skip if it's a static file request (has file extension like .js, .css, .png, etc.)
-  // This allows static files to be served by the static middleware above
-  const hasFileExtension = /\.[^/]+$/.test(req.path);
-  if (hasFileExtension) {
-    return next();
+  // Don't serve index.html for uploads (should have been handled already)
+  if (req.path.startsWith("/uploads")) {
+    return res.status(404).json({ success: false, message: "File not found" });
   }
   
-  // Serve index.html for all SPA routes (this allows React Router to handle routing)
-  const indexPath = path.join(__dirname, "../frontend/dist", "index.html");
+  // Don't serve index.html for assets (should have been handled already)
+  if (req.path.startsWith("/assets")) {
+    return res.status(404).send("Asset not found");
+  }
   
-  // Check if file exists before sending
-  if (!fs.existsSync(indexPath)) {
-    console.error(`index.html not found at: ${indexPath}`);
+  // Don't serve index.html for static files with extensions (except .html)
+  if (/\.[^/]+$/.test(req.path) && !req.path.endsWith(".html")) {
+    return res.status(404).send("File not found");
+  }
+  
+  // Try multiple possible paths for index.html (for different deployment environments)
+  const possiblePaths = [
+    path.join(__dirname, "../frontend/dist", "index.html"),
+    path.join(__dirname, "../frontend/dist/index.html"),
+    path.join(process.cwd(), "frontend/dist/index.html"),
+    path.join(process.cwd(), "frontend/dist", "index.html"),
+  ];
+  
+  let indexPath = null;
+  for (const possiblePath of possiblePaths) {
+    if (fs.existsSync(possiblePath)) {
+      indexPath = possiblePath;
+      break;
+    }
+  }
+  
+  if (!indexPath) {
+    console.error(`index.html not found. Tried paths:`, possiblePaths);
+    console.error(`Current __dirname: ${__dirname}`);
+    console.error(`Current process.cwd(): ${process.cwd()}`);
     return res.status(500).send("Application not built. Please run 'npm run build' in the frontend directory.");
   }
   
+  // Serve index.html for all SPA routes (like /logs, /templates, /participants, etc.)
   res.sendFile(indexPath, (err) => {
     if (err) {
       console.error("Error sending index.html:", err);
