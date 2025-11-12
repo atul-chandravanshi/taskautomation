@@ -149,13 +149,19 @@ exports.sendCertificateEmail = async (
   }
 };
 
-// Send event notification to all participants
-exports.sendEventNotificationToAll = async (event) => {
+// Send event notification to participants (all or subset)
+exports.sendEventNotificationToAll = async (event, participantIds = null) => {
   try {
-    // Get all participants
-    const participants = await Participant.find({
+    const participantQuery = {
       email: { $exists: true, $ne: "" },
-    });
+    };
+
+    if (Array.isArray(participantIds) && participantIds.length > 0) {
+      participantQuery._id = { $in: participantIds };
+    }
+
+    // Get participants
+    const participants = await Participant.find(participantQuery);
 
     if (participants.length === 0) {
       return {

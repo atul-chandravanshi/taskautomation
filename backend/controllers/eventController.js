@@ -11,7 +11,13 @@ const certificateHelper = require("../utils/certificateHelper");
 // @access  Private/Admin
 exports.createEvent = async (req, res) => {
   try {
-    const { name, description, date } = req.body;
+    const { name, description, date, participants: rawParticipantIds = [] } =
+      req.body;
+
+    // Ensure participant IDs are unique and valid ObjectId strings
+    const participantIds = Array.isArray(rawParticipantIds)
+      ? [...new Set(rawParticipantIds.filter(Boolean))]
+      : [];
 
     const event = await Event.create({
       name,
@@ -19,6 +25,26 @@ exports.createEvent = async (req, res) => {
       date,
       createdBy: req.user._id,
     });
+
+    // Attach participants to the event if provided
+    if (participantIds.length > 0) {
+      const participants = await Participant.find({
+        _id: { $in: participantIds },
+        email: { $exists: true, $ne: "" },
+      }).select("_id");
+
+      if (participants.length > 0) {
+        const participantObjectIds = participants.map((p) => p._id);
+
+        event.participants = participantObjectIds;
+        await event.save();
+
+        await Participant.updateMany(
+          { _id: { $in: participantObjectIds } },
+          { eventId: event._id }
+        );
+      }
+    }
 
     // Automatically create certificate template for this event
     try {
@@ -54,17 +80,19 @@ exports.createEvent = async (req, res) => {
       // Don't fail event creation if certificate template creation fails
     }
 
-    // Send email notifications to all participants about the upcoming event
-    sendEventNotificationToAll(event)
-      .then((result) => {
-        console.log(`Event notification emails: ${result.message}`);
-        if (result.errors && result.errors.length > 0) {
-          console.error("Some emails failed to send:", result.errors);
-        }
-      })
-      .catch((error) => {
-        console.error("Error sending event notification emails:", error);
-      });
+    // Send email notifications to participants about the upcoming event
+    try {
+      const notificationResult = await sendEventNotificationToAll(
+        event,
+        event.participants
+      );
+      console.log(`Event notification emails: ${notificationResult.message}`);
+      if (notificationResult.errors && notificationResult.errors.length > 0) {
+        console.error("Some emails failed to send:", notificationResult.errors);
+      }
+    } catch (error) {
+      console.error("Error sending event notification emails:", error);
+    }
 
     // Log activity
     await ActivityLog.create({
