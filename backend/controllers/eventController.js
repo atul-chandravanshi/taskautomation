@@ -105,18 +105,27 @@ exports.createEvent = async (req, res) => {
     }
 
     // Send email notifications to participants about the upcoming event
-    try {
-      const notificationResult = await sendEventNotificationToAll(
-        event,
-        event.participants
-      );
-      console.log(`Event notification emails: ${notificationResult.message}`);
-      if (notificationResult.errors && notificationResult.errors.length > 0) {
-        console.error("Some emails failed to send:", notificationResult.errors);
-      }
-    } catch (error) {
-      console.error("Error sending event notification emails:", error);
-    }
+    const notificationParticipantIds =
+      Array.isArray(event.participants) && event.participants.length > 0
+        ? event.participants
+        : null;
+
+    sendEventNotificationToAll(event, notificationParticipantIds)
+      .then((notificationResult) => {
+        console.log(`Event notification emails: ${notificationResult.message}`);
+        if (
+          notificationResult.errors &&
+          notificationResult.errors.length > 0
+        ) {
+          console.error(
+            "Some emails failed to send:",
+            notificationResult.errors
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("Error sending event notification emails:", error);
+      });
 
     // Log activity
     await ActivityLog.create({
