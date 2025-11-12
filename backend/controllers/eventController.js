@@ -11,8 +11,32 @@ const certificateHelper = require("../utils/certificateHelper");
 // @access  Private/Admin
 exports.createEvent = async (req, res) => {
   try {
-    const { name, description, date, participants: rawParticipantIds = [] } =
-      req.body;
+    const {
+      name: rawName,
+      description,
+      date,
+      participants: rawParticipantIds = [],
+    } = req.body;
+
+    const name = (rawName || "").trim();
+    if (!name) {
+      return res.status(400).json({
+        success: false,
+        message: "Event name is required",
+      });
+    }
+
+    // Check for duplicate event name (case-insensitive)
+    const existingEvent = await Event.findOne({
+      name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+    });
+
+    if (existingEvent) {
+      return res.status(400).json({
+        success: false,
+        message: "Event with this name already exists",
+      });
+    }
 
     // Ensure participant IDs are unique and valid ObjectId strings
     const participantIds = Array.isArray(rawParticipantIds)
